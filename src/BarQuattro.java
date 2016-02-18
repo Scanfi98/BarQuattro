@@ -160,7 +160,7 @@ class Bancone implements Runnable {
     /**
      * Prende l'Alcolico alla posizione indicata
      *
-     * @param nFila posizione della fila
+     * @param pos posizione della fila
      * @return l'Alcolico
      */
     public Alcolico getAtPos(int pos) {
