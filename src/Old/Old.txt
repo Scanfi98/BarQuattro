@@ -1,0 +1,344 @@
+
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+/**
+ Main
+
+ @author scanferla.giovanni
+ */
+public class Old {
+
+	public static void main(String[] args) {
+		new Thread(new Bancone(4)).start();
+	}
+
+}
+
+/**
+ Classe del bancone
+
+ @author scanferla.giovanni
+ */
+class Bancone implements Runnable {
+
+	private Alcolico[] bancone; //array con gli alcolici
+
+	private Thread[][] matriceClienti; //matrice thread clienti
+
+	private int[] arrayFileFinite; //array con il conteggio dei clienti serviti per fila
+
+	private HashMap<String, Integer> contatoreBib; //hash map con i contatori delle varie bibite
+
+	private int attesa; //contatore dei secondi prima di pulire il banco
+
+	private int totaleServiti; //contatore del totale dei clienti serviti
+
+	private int totaleDaServire; //contatore di tutte le file attive
+
+	private Lock[] arrayLocks; //array contentente i lock delle varie file di clienti
+
+	public Bancone(int dim) {
+
+		bancone = new Alcolico[dim];
+
+		for (int i = 0; i < bancone.length; i++) {
+			bancone[i] = null;
+		}
+
+		matriceClienti = new Thread[dim][4];
+
+		arrayFileFinite = new int[dim];
+
+		for (int i = 0; i < arrayFileFinite.length; i++) {
+			arrayFileFinite[i] = 0;
+		}
+
+		contatoreBib = new HashMap<>();
+
+		for (int i = 0; i < Alcolico.alcolici.length; i++) {
+			contatoreBib.put(Alcolico.alcolici[i], 0);
+		}
+
+		attesa = 0;
+
+		totaleServiti = 0;
+		totaleDaServire = 0;
+
+		arrayLocks = new ReentrantLock[dim];
+
+		for (int i = 0; i < arrayLocks.length; i++) {
+			arrayLocks[i] = new ReentrantLock();
+		}
+
+	}
+
+	@Override
+	public void run() {
+
+		new Thread(new Porta(this)).start();
+
+		while (!isEnded()) {
+			if (attesa == 2) {
+				clear();
+			}
+
+			if (isFull()) {
+				attesa++;
+			} else {
+				aggiungi();
+			}
+			try {
+				TimeUnit.SECONDS.sleep(1);
+			} catch (InterruptedException e) {
+
+			}
+		}
+		clear();
+		System.out.println("BARISTA: Bar chiuso, clienti serviti n." + totaleServiti);
+	}
+
+	/**
+	 Controlla se sono stati serviti tutti i clienti
+
+	 @return true se sono stati serviti tutti sennò false
+	 */
+	public boolean isEnded() {
+
+		return totaleServiti == (matriceClienti[0].length * matriceClienti.length);
+
+	}
+
+	/**
+	 Controlla se il bancone è pieno
+
+	 @return ritorna true se tutte le file ATTIVE sono piene, sennò false
+	 */
+	public boolean isFull() {
+		int cont = 0;
+		for (int i = 0; i < bancone.length; i++) {
+			if (bancone[i] != null && arrayFileFinite[i] != 0) {
+				cont++;
+			}
+		}
+		return cont != 0;
+	}
+
+	/**
+	 Resetta il bancone
+	 */
+	public void clear() {
+		for (int i = 0; i < bancone.length; i++) {
+			rimuovi(i);
+		}
+		attesa = 0;
+		System.out.println("BARISTA: Bancone ripulito");
+	}
+
+	/**
+	 Aggiunge un Alcolico ad una fila ATTIVA, purchè non ne siano già presenti tre dello stesso tipo
+
+	 @return true se lo inserisce, sennò false
+	 */
+	public boolean aggiungi() {
+		if (isFull()) {
+			return false;
+		}
+		Alcolico a = new Alcolico();
+
+		int cont = contatoreBib.get(a.getNome());
+		if (cont < 3) {
+			for (int i = 0; i < bancone.length; i++) {
+				if (bancone[i] == null && arrayFileFinite[i] != 0) {
+					bancone[i] = a;
+					contatoreBib.put(a.getNome(), cont + 1);
+					System.out.println("BARISTA: Aggiunto " + a.getNome() + " alla fila " + (i + 1));
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 Rimuove l'elemento alla posizione indicata
+
+	 @param nFila il numero della fila
+	 @return l'Alcolico rimosso
+	 */
+	public Alcolico rimuovi(int nFila) {
+		if (bancone[nFila] != null) {
+			Alcolico temp = bancone[nFila];
+			bancone[nFila] = null;
+
+			int contTemp = contatoreBib.get(temp.getNome()) - 1;
+			contatoreBib.put(temp.getNome(), (contTemp));
+
+			return temp;
+		} else {
+			return null;
+		}
+	}
+
+	/**
+	 Prende l'Alcolico alla posizione indicata
+
+	 @param nFila posizione della fila
+	 @return l'Alcolico
+	 */
+	public Alcolico getAtPos(int nFila) {
+		return bancone[nFila];
+	}
+
+	/**
+	 Metodo che viene eseguito da un cliente una volta ottenuta l'ordinazione, incrementa tutti i valori
+	 di gestione per le file attive
+
+	 @param nFila il numero della fila
+	 */
+	public void incrementaClienti(int nFila) {
+		arrayFileFinite[nFila] = arrayFileFinite[nFila] - 1;
+		totaleDaServire--;
+		if (arrayFileFinite[nFila] == 0) {
+			System.err.println("Fila " + (nFila + 1) + " vuota");
+		}
+		totaleServiti++;
+	}
+
+	/**
+	* Gestisce l'arrivo dei clienti
+	*/
+	private class Porta implements Runnable {
+
+		private Bancone banco;
+
+		public Porta(Bancone banco) {
+			this.banco = banco;
+		}
+	
+		@Override
+		public void run() {
+			totaleDaServire++;
+			Random r = new Random(new Date().getTime());
+			for (int i = 0; i < matriceClienti.length; i++) {
+				for (int j = 0; j < matriceClienti[0].length; j++) {
+					try {
+						matriceClienti[i][j] = new Thread(new Cliente(j, banco, arrayLocks[j]), ("CLIENTE FILA " + (j + 1) + "x" + (i + 1)));
+						arrayFileFinite[i] = arrayFileFinite[i] + 1;
+						matriceClienti[i][j].start();
+						System.out.println("PORTA: E' ENTRATO IL " + "CLIENTE FILA " + (j + 1) + "x" + (i + 1));
+						TimeUnit.SECONDS.sleep(r.nextInt(7) + 1);
+					} catch (InterruptedException ex) {
+
+					}
+				}
+			}
+		}
+
+	}
+}
+
+/**
+ Classe dell'Alcolico
+
+ @author scanferla.giovanni
+ */
+class Alcolico {
+
+	public static String[] alcolici = {"Spritz", "Birra", "Prosecco", "Cocktail"}; //Array contente tutti i tipi di alcolici
+
+	private String nome; //nome dell'alcolico
+
+	public Alcolico() {
+		nome = generaNome();
+	}
+
+	/**
+	 Genera un nome randomico per l'alcolico
+
+	 @return il nome generato
+	 */
+	private String generaNome() {
+		Random r = new Random();
+		return alcolici[r.nextInt(alcolici.length)];
+	}
+
+	/**
+	 Get del nome
+
+	 @return nome
+	 */
+	public String getNome() {
+		return nome;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		Alcolico alcolico = (Alcolico) o;
+		return nome.equals(alcolico.nome);
+
+	}
+
+	@Override
+	public int hashCode() {
+		return nome != null ? nome.hashCode() : 0;
+	}
+}
+
+/**
+ Classe del cliente
+
+ @author scanferla.giovanni
+ */
+class Cliente implements Runnable {
+
+	private final Alcolico ORDINAZIONE; //Alcolico desiderato dalcliente
+
+	private final int FILA; //indica il numero della fila
+	private final Bancone BANCONE; //il bancone del bar
+	private final Lock LOCK; //il lock di gestione della fila
+
+	public Cliente(int fila, Bancone bancone, Lock lock) {
+		ORDINAZIONE = new Alcolico();
+		this.BANCONE = bancone;
+		this.FILA = fila;
+		this.LOCK = lock;
+	}
+
+	@Override
+	public void run() {
+		System.out.println(Thread.currentThread().getName() + ": vorrei " + ORDINAZIONE.getNome());
+		LOCK.lock();
+		try {
+			boolean bevuto = false;
+
+			while (!bevuto) {
+
+				Alcolico a = BANCONE.getAtPos(FILA);
+				if (ORDINAZIONE.equals(a)) {
+					BANCONE.rimuovi(FILA);
+					System.out.println(Thread.currentThread().getName() + ": ordinazione bevuta");
+					bevuto = true;
+					BANCONE.incrementaClienti(FILA);
+				} else {
+					try {
+						TimeUnit.SECONDS.sleep(1);
+					} catch (InterruptedException e) {
+
+					}
+				}
+			}
+		} finally {
+			LOCK.unlock();
+		}
+	}
+}
+*/
